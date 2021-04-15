@@ -527,7 +527,13 @@
                    exportSession.outputFileType = AVFileTypeMPEG4;
                    exportSession.outputURL = [NSURL fileURLWithPath:path];
                    [exportSession exportAsynchronouslyWithCompletionHandler:^{
-                     [handler reply:path];
+                       if ([exportSession status] == AVAssetExportSessionStatusCompleted) {
+                           [handler reply:path];
+                       }else if ([exportSession status] == AVAssetExportSessionStatusCancelled) {
+                           [handler reply:nil];
+                       }else if ([exportSession status] == AVAssetExportSessionStatusFailed) {
+                           [handler reply:nil];
+                       }
                    }];
 
                    [self notifySuccess:progressHandler];
