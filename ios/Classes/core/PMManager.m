@@ -512,7 +512,6 @@
     BOOL downloadFinish = [PMManager isDownloadFinish:info];
     
     if (!downloadFinish) {
-      NSLog(@"Asset download fail: %@");
       [handler reply:nil];
       return;
     }
@@ -525,10 +524,8 @@
         if ([exportSession status] == AVAssetExportSessionStatusCompleted) {
           [handler reply:path];
         } else if ([exportSession status] == AVAssetExportSessionStatusFailed) {
-          NSLog(@"Export session failed: %@", exportSession.error);
           [handler reply:nil];
         } else if ([exportSession status] == AVAssetExportSessionStatusCancelled) {
-          NSLog(@"Export session cancelled: %@", exportSession.error);
           [handler reply:nil];
         }
       }];
