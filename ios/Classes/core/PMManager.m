@@ -483,77 +483,77 @@
 }
 
 - (void)fetchFullSizeVideo:(PHAsset *)asset handler:(NSObject <PMResultHandler> *)handler progressHandler:(NSObject <PMProgressHandlerProtocol> *)progressHandler {
-    NSString *homePath = NSTemporaryDirectory();
-    NSFileManager *manager = NSFileManager.defaultManager;
-    
-    NSMutableString *path = [NSMutableString stringWithString:homePath];
-    
-    NSString *filename = [asset valueForKey:[NSString stringWithFormat:@"filename"]];
-    
-    NSString *dirPath = [NSString stringWithFormat:@"%@/%@", homePath, @".video"];
-    [manager createDirectoryAtPath:dirPath
-       withIntermediateDirectories:true
-                        attributes:@{}
-                             error:nil];
-    
-    [path appendFormat:@"%@/%@", @".video", filename];
-    PHVideoRequestOptions *options = [PHVideoRequestOptions new];
-    if ([manager fileExistsAtPath:path]) {
-        [[PMLogUtils sharedInstance]
-         info:[NSString stringWithFormat:@"read cache from %@", path]];
-        [handler reply:path];
-        return;
+  NSString *homePath = NSTemporaryDirectory();
+  NSFileManager *manager = NSFileManager.defaultManager;
+
+  NSMutableString *path = [NSMutableString stringWithString:homePath];
+
+  NSString *filename = [asset valueForKey:[NSString stringWithFormat:@"filename"]];
+
+  NSString *dirPath = [NSString stringWithFormat:@"%@/%@", homePath, @".video"];
+  [manager createDirectoryAtPath:dirPath
+     withIntermediateDirectories:true
+                      attributes:@{}
+                           error:nil];
+
+  [path appendFormat:@"%@/%d_%@", @".video", (int)asset.modificationDate.timeIntervalSince1970 ,filename];
+
+  PHVideoRequestOptions *options = [PHVideoRequestOptions new];
+  options.version = PHVideoRequestOptionsVersionCurrent;
+  if ([manager fileExistsAtPath:path]) {
+    [[PMLogUtils sharedInstance]
+        info:[NSString stringWithFormat:@"read cache from %@", path]];
+    [handler reply:path];
+    return;
+  }
+
+
+  [self notifyProgress:progressHandler progress:0 state:PMProgressStatePrepare];
+  [options setProgressHandler:^(double progress, NSError *error, BOOL *stop,
+      NSDictionary *info) {
+    if (progress == 1.0) {
+      [self notifyProgress:progressHandler progress:progress state:PMProgressStateLoading];
     }
-    
-    
-    [self notifyProgress:progressHandler progress:0 state:PMProgressStatePrepare];
-    [options setProgressHandler:^(double progress, NSError *error, BOOL *stop, NSDictionary *info) {
-        if (error) {
-            [self notifyProgress:progressHandler progress:progress state:PMProgressStateFailed];
-            [progressHandler deinit];
+
+    if (error) {
+      [self notifyProgress:progressHandler progress:progress state:PMProgressStateFailed];
+      [progressHandler deinit];
+      return;
+    }
+    if (progress != 1) {
+      [self notifyProgress:progressHandler progress:progress state:PMProgressStateLoading];
+    }
+  }];
+
+  [options setNetworkAccessAllowed:YES];
+
+  [[PHImageManager defaultManager]
+      requestExportSessionForVideo:asset options:options exportPreset:AVAssetExportPresetHighestQuality resultHandler:^(AVAssetExportSession *_Nullable exportSession, NSDictionary *_Nullable info) {
+          BOOL downloadFinish = [PMManager isDownloadFinish:info];
+
+          if (!downloadFinish) {
+            [handler reply:nil];
             return;
-        }
-        if (progress != 1) {
-            [self notifyProgress:progressHandler progress:progress state:PMProgressStateLoading];
-        }
-    }];
-    
-    [options setNetworkAccessAllowed:YES];
-    
-    [[PHImageManager defaultManager]
-     requestAVAssetForVideo:asset
-     options:options
-     resultHandler:^(AVAsset *_Nullable asset,
-                     AVAudioMix *_Nullable audioMix,
-                     NSDictionary *_Nullable info) {
-        BOOL downloadFinish = [PMManager isDownloadFinish:info];
-        
-        if (!downloadFinish) {
-            return;
-        }
-        
-        NSString *preset = AVAssetExportPresetHighestQuality;
-        AVAssetExportSession *exportSession =
-        [AVAssetExportSession exportSessionWithAsset:asset
-                                          presetName:preset];
-        if (exportSession) {
+          }
+
+          if (exportSession) {
+            exportSession.shouldOptimizeForNetworkUse = YES;
             exportSession.outputFileType = AVFileTypeMPEG4;
             exportSession.outputURL = [NSURL fileURLWithPath:path];
             [exportSession exportAsynchronouslyWithCompletionHandler:^{
-                if (exportSession.status == AVAssetExportSessionStatusCompleted) {
-                    [handler reply:path];
-                    [self notifySuccess:progressHandler];
-                } else if (exportSession.status == AVAssetExportSessionStatusFailed ||
-                           exportSession.status == AVAssetExportSessionStatusCancelled) {
-                    [handler reply:nil];
-                    [self notifyProgress:progressHandler progress:1.0 state:PMProgressStateFailed];
-                    [progressHandler deinit];
-                }
+              if ([exportSession status] == AVAssetExportSessionStatusCompleted) {
+                [handler reply:path];
+              } else if ([exportSession status] == AVAssetExportSessionStatusFailed) {
+                [handler reply:nil];
+              } else if ([exportSession status] == AVAssetExportSessionStatusCancelled) {
+                [handler reply:nil];
+              }
             }];
-        } else {
+            [self notifySuccess:progressHandler];
+          } else {
             [handler reply:nil];
-        }
-    }];
+          }
+        }];
 }
 
 - (NSString *)makeAssetOutputPath:(PHAsset *)asset isOrigin:(Boolean)isOrigin {
@@ -576,53 +576,51 @@
 }
 
 - (void)fetchFullSizeImageFile:(PHAsset *)asset resultHandler:(NSObject <PMResultHandler> *)handler progressHandler:(NSObject <PMProgressHandlerProtocol> *)progressHandler {
-    PHImageManager *manager = PHImageManager.defaultManager;
-    PHImageRequestOptions *options = [PHImageRequestOptions new];
-    options.synchronous = YES;
-    options.version = PHImageRequestOptionsVersionCurrent;
-    
-    
-    [options setNetworkAccessAllowed:YES];
-    [self notifyProgress:progressHandler progress:0 state:PMProgressStatePrepare];
-    [options setProgressHandler:^(double progress, NSError *error, BOOL *stop,
-                                  NSDictionary *info) {
-        if (error) {
-            [self notifyProgress:progressHandler progress:progress state:PMProgressStateFailed];
-            [progressHandler deinit];
-            return;
-        }
-        if (progress != 1) {
-            [self notifyProgress:progressHandler progress:progress state:PMProgressStateLoading];
-        }
-    }];
-    
-    [manager requestImageForAsset:asset
-                       targetSize:PHImageManagerMaximumSize
-                      contentMode:PHImageContentModeDefault
-                          options:options
-                    resultHandler:^(PMImage *_Nullable image,
-                                    NSDictionary *_Nullable info) {
-        
-        BOOL downloadFinished = [PMManager isDownloadFinish:info];
-        if (!downloadFinished) {
-            return;
-        }
-        
-        if ([handler isReplied]) {
-            return;
-        }
-        
-        NSData *data = [PMImageUtil convertToData:image formatType:PMThumbFormatTypeJPEG quality:1.0];
-        
-        if (data) {
-            NSString *path = [self writeFullFileWithAssetId:asset imageData: data];
-            [handler reply:path];
-        } else {
-            [handler reply:nil];
-        }
-        
-        [self notifySuccess:progressHandler];
-    }];
+  PHImageManager *manager = PHImageManager.defaultManager;
+  PHImageRequestOptions *options = [PHImageRequestOptions new];
+  options.synchronous = YES;
+  options.version = PHImageRequestOptionsVersionCurrent;
+
+
+  [options setNetworkAccessAllowed:YES];
+  [self notifyProgress:progressHandler progress:0 state:PMProgressStatePrepare];
+  [options setProgressHandler:^(double progress, NSError *error, BOOL *stop,
+      NSDictionary *info) {
+    if (progress == 1.0) {
+      [self notifyProgress:progressHandler progress:progress state:PMProgressStateLoading];
+    }
+
+    if (error) {
+      [self notifyProgress:progressHandler progress:progress state:PMProgressStateFailed];
+      [progressHandler deinit];
+      return;
+    }
+    if (progress != 1) {
+      [self notifyProgress:progressHandler progress:progress state:PMProgressStateLoading];
+    }
+  }];
+
+  [manager requestImageForAsset:asset
+                     targetSize:PHImageManagerMaximumSize
+                    contentMode:PHImageContentModeDefault
+                        options:options
+                  resultHandler:^(PMImage *_Nullable image,
+                      NSDictionary *_Nullable info) {
+                    if ([handler isReplied]) {
+                      return;
+                    }
+
+                    BOOL downloadFinished = [PMManager isDownloadFinish:info];
+                    if (!downloadFinished) {
+                      [handler reply:nil];
+                      return;
+                    }
+
+                    NSString *path = [self writeFullFileWithAssetId:asset imageData:UIImageJPEGRepresentation(image, 1.0)];
+
+                    [self notifySuccess:progressHandler];
+                    [handler reply:path];
+                  }];
 }
 
 - (NSString *)writeFullFileWithAssetId:(PHAsset *)asset imageData:(NSData *)imageData {
@@ -975,7 +973,9 @@
 - (void)getMediaUrl:(NSString *)assetId resultHandler:(NSObject <PMResultHandler> *)handler {
     PHAsset *phAsset = [PHAsset fetchAssetsWithLocalIdentifiers:@[assetId] options:nil].firstObject;
     if (phAsset.isVideo) {
-        [PHCachingImageManager.defaultManager requestAVAssetForVideo:phAsset options:nil resultHandler:^(AVAsset *asset, AVAudioMix *audioMix, NSDictionary *info) {
+        PHVideoRequestOptions *options = [PHVideoRequestOptions new];
+        options.networkAccessAllowed = YES;
+        [PHCachingImageManager.defaultManager requestAVAssetForVideo:phAsset options:options resultHandler:^(AVAsset *asset, AVAudioMix *audioMix, NSDictionary *info) {
             if ([asset isKindOfClass:[AVURLAsset class]]) {
                 NSURL *url = ((AVURLAsset *) asset).URL;
                 [PMLogUtils.sharedInstance info: [NSString stringWithFormat:@"The asset asset URL = %@", url]];
